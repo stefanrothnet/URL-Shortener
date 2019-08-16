@@ -32,7 +32,7 @@ stages:
               Write-Output "Organization is set to $(ORGANIZATION)"
               Write-Output "Repository $(DEVOPS-MODULE-REPOSITORY) registered"
               Import-Module ShortenURL -Force
-              $newURL = New-RebrandlyURL -Url "https://dev.azure.com/tfsreturnone/$(System.TeamProject)/_git/$(Build.Repository.ID)/commit/$(Build.SourceVersion)/" -Key  $(REBRANDLY-API-KEY) `
+              $newURL = New-RebrandlyURL -Url "https://dev.azure.com/$(ORGANIZATION)/$(System.TeamProject)/_git/$(Build.Repository.ID)/commit/$(Build.SourceVersion)/" -Key  $(REBRANDLY-API-KEY) `
               -DomainId $(REBRANDLY-DOMAIN-ID) -WorkspaceId $(REBRANDLY-WORKSPACE) -Verbose
               echo "##vso[task.setvariable variable=newURL;isOutput=true]$newURL"
       - script: echo $(New_URL.newURL)
