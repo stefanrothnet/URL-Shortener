@@ -1,0 +1,55 @@
+variables:
+  SUBSCRIPTION: 'ServiceConnection (URL-Shortener)'
+
+stages:
+- stage: Build
+  jobs:
+    - job: 'Create_URL'
+      pool:
+        vmImage: 'windows-2019'
+      steps:    
+      - task: AzureKeyVault@1
+        displayName: 'Azure Key Vault Connection'
+        inputs:
+          azureSubscription: $(SUBSCRIPTION)
+          keyVaultName: 'url-shortener-kv'
+          #secretsFilter: '*' # Options: editableOptions
+      - task: AzurePowerShell@4
+        name: 'New_URL'
+        displayName: 'New URL'
+        inputs:
+          azureSubscription: $(SUBSCRIPTION)
+          azurePowerShellVersion: 'LatestVersion'
+          ScriptType: InlineScript
+          Inline: |
+              $password = ConvertTo-SecureString $(DEVOPS-PAT) -AsPlainText -Force
+              $credsAzureDevopsServices = New-Object System.Management.Automation.PSCredential $(DEVOPS-USER), $password
+              Register-PSRepository -Name $(DEVOPS-MODULE-REPOSITORY) -SourceLocation "https://pkgs.dev.azure.com/$(ORGANIZATION)/_packaging/$(DEVOPS-ARTIFACTS-REPOSITORY)/nuget/v2" `
+              -PublishLocation "https://pkgs.dev.azure.com/$(ORGANIZATION)/_packaging/$(DEVOPS-ARTIFACTS-REPOSITORY)/nuget/v2/" -InstallationPolicy Trusted -Credential $credsAzureDevopsServices -Verbose
+              Write-Output "ORGANIZATION is set to $(ORGANIZATION)"
+              Write-Output "Repository registered"
+              Install-Module ShortenURL -Repository $(DEVOPS-MODULE-REPOSITORY) -Credential $credsAzureDevopsServices 
+              Write-Output "Organization is set to $(ORGANIZATION)"
+              Write-Output "Repository $(DEVOPS-MODULE-REPOSITORY) registered"
+              Import-Module ShortenURL -Force
+              $newURL = New-RebrandlyURL -Url "https://dev.azure.com/tfsreturnone/$(System.TeamProject)/_git/$(Build.Repository.ID)/commit/$(Build.SourceVersion)/" -Key  $(REBRANDLY-API-KEY) `
+              -DomainId $(REBRANDLY-DOMAIN-ID) -WorkspaceId $(REBRANDLY-WORKSPACE) -Verbose
+              echo "##vso[task.setvariable variable=newURL;isOutput=true]$newURL"
+      - script: echo $(New_URL.newURL)
+    - job: Deploy_ARM_Template
+      dependsOn: 'Create_URL'
+      pool:
+        vmImage: 'windows-2019'
+      variables: 
+        commitURL: $[dependencies.Create_URL.outputs['New_URL.newURL']]
+      steps:
+      - task: AzureResourceGroupDeployment@2
+        displayName: 'Deploy ARM Template'
+        inputs:
+          azureSubscription: $(SUBSCRIPTION)
+          resourceGroupName: 'StorageAccount_01'
+          location: 'West Europe'
+          csmFile: '$(Build.SourcesDirectory)/storage-account/azuredeploy.json'
+          csmParametersFile: '$(Build.SourcesDirectory)/storage-account/azuredeploy.parameters.json'
+          overrideParameters: -storageAccountType "Standard_LRS" -commitURL $(commitURL)
+      - script: echo $(commitURL)
